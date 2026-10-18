@@ -88,3 +88,8 @@ variable "eks_max_size" {
   default = 3
 }
 
+
+variable "jenkins_role_name" {
+  description = "Name of the IAM role attached to the Jenkins EC2 instance"
+  type        = string
+}

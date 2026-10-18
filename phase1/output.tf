@@ -1,3 +1,18 @@
+
+output "ecr_repository_name" {
+  description = "CloudMart ECR repository name"
+  value       = aws_ecr_repository.cloudmart.name
+}
+
+output "ecr_repository_url" {
+  description = "CloudMart ECR image URL"
+  value       = aws_ecr_repository.cloudmart.repository_url
+}
+
+output "ecr_repository_arn" {
+  description = "CloudMart ECR repository ARN"
+  value       = aws_ecr_repository.cloudmart.arn
+}
 output "aws_region" {
   value = var.aws_region
 }

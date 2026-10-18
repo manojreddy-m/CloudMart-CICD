@@ -77,3 +77,37 @@ pipeline {
         }
     }
 }
+
+
+stage('Push Image to Amazon ECR') {
+    steps {
+        sh '''
+            set -eu
+
+            AWS_REGION="ap-south-1"
+            ECR_REPOSITORY="cloudmart"
+            ACCOUNT_ID=$(aws sts get-caller-identity \
+                --query Account --output text)
+
+            REGISTRY="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+            ECR_URI="${REGISTRY}/${ECR_REPOSITORY}"
+
+            aws ecr get-login-password \
+                --region "${AWS_REGION}" |
+                docker login \
+                    --username AWS \
+                    --password-stdin "${REGISTRY}"
+
+            docker tag "cloudmart:${BUILD_NUMBER}" \
+                "${ECR_URI}:${BUILD_NUMBER}"
+
+            docker tag "cloudmart:${BUILD_NUMBER}" \
+                "${ECR_URI}:latest"
+
+            docker push "${ECR_URI}:${BUILD_NUMBER}"
+            docker push "${ECR_URI}:latest"
+
+            echo "CloudMart image pushed successfully."
+        '''
+    }
+}
