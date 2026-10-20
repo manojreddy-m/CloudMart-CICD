@@ -1,4 +1,5 @@
 
+cat > Jenkinsfile <<'EOF'
 pipeline {
     agent any
 
@@ -10,6 +11,8 @@ pipeline {
         AWS_REGION = 'ap-south-1'
         ECR_REPOSITORY = 'cloudmart'
         IMAGE_NAME = 'cloudmart'
+        EKS_CLUSTER = 'cloudmart-eks'
+        K8S_NAMESPACE = 'cloudmart'
     }
 
     stages {
@@ -39,7 +42,6 @@ pipeline {
                 dir('app') {
                     sh '''
                         set -eu
-
                         docker run --rm \
                             --user "$(id -u):$(id -g)" \
                             -e npm_config_cache=/tmp/npm-cache \
@@ -69,7 +71,6 @@ pipeline {
                 sh '''
                     set -eu
                     docker image inspect "${IMAGE_NAME}:${BUILD_NUMBER}"
-                    docker image ls "${IMAGE_NAME}"
                 '''
             }
         }
@@ -81,27 +82,49 @@ pipeline {
 
                     ACCOUNT_ID=$(aws sts get-caller-identity \
                         --query Account --output text)
-
                     REGISTRY="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
                     ECR_URI="${REGISTRY}/${ECR_REPOSITORY}"
 
-                    aws ecr get-login-password \
-                        --region "${AWS_REGION}" |
-                        docker login \
-                            --username AWS \
-                            --password-stdin "${REGISTRY}"
+                    aws ecr get-login-password --region "${AWS_REGION}" |
+                        docker login --username AWS --password-stdin "${REGISTRY}"
 
                     docker tag "${IMAGE_NAME}:${BUILD_NUMBER}" \
                         "${ECR_URI}:${BUILD_NUMBER}"
-
                     docker tag "${IMAGE_NAME}:${BUILD_NUMBER}" \
                         "${ECR_URI}:latest"
 
                     docker push "${ECR_URI}:${BUILD_NUMBER}"
                     docker push "${ECR_URI}:latest"
 
-                    echo "CloudMart image pushed successfully."
-                    echo "Image: ${ECR_URI}:${BUILD_NUMBER}"
+                    echo "Pushed ${ECR_URI}:${BUILD_NUMBER}"
+                '''
+            }
+        }
+
+        stage('Deploy to EKS') {
+            steps {
+                sh '''
+                    set -eu
+
+                    ACCOUNT_ID=$(aws sts get-caller-identity \
+                        --query Account --output text)
+                    ECR_URI="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}"
+
+                    aws eks update-kubeconfig \
+                        --name "${EKS_CLUSTER}" \
+                        --region "${AWS_REGION}"
+
+                    kubectl set image \
+                        deployment/cloudmart \
+                        cloudmart="${ECR_URI}:${BUILD_NUMBER}" \
+                        --namespace="${K8S_NAMESPACE}"
+
+                    kubectl rollout status \
+                        deployment/cloudmart \
+                        --namespace="${K8S_NAMESPACE}" \
+                        --timeout=180s
+
+                    echo "CloudMart deployed successfully to EKS."
                 '''
             }
         }
@@ -109,15 +132,14 @@ pipeline {
 
     post {
         success {
-            echo 'SUCCESS: CloudMart-CICD pipeline completed.'
+            echo 'SUCCESS: CloudMart built, tested, pushed to ECR, and deployed to EKS.'
         }
-
         failure {
             echo 'FAILURE: Check Console Output for the failed stage.'
         }
-
         always {
             echo "Pipeline finished for build ${BUILD_NUMBER}."
         }
     }
 }
+EOF
